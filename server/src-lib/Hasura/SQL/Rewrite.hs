@@ -150,20 +150,26 @@ uJoinCond joinCond = case joinCond of
   S.JoinUsing cols -> return $ S.JoinUsing cols
 
 uBoolExp :: S.BoolExp -> Uniq S.BoolExp
-uBoolExp = restoringIdens . \case
-  S.BELit b -> return $ S.BELit b
+uBoolExp = restoringIdens . uBoolExp' uSqlExp uSelect
+
+uBoolExp' :: Applicative f
+          => (S.SQLExp -> f S.SQLExp)
+          -> (S.Select -> f S.Select)
+          -> S.BoolExp -> f S.BoolExp
+uBoolExp' f g = \case
+  S.BELit b -> pure $ S.BELit b
   S.BEBin op left right ->
-    S.BEBin <$> return op <*> uBoolExp left <*> uBoolExp right
-  S.BENot b -> S.BENot <$> uBoolExp b
+    S.BEBin <$> pure op <*> uBoolExp' f g left <*> uBoolExp' f g right
+  S.BENot b -> S.BENot <$> uBoolExp' f g b
   S.BECompare op left right ->
-    S.BECompare <$> return op <*> uSqlExp left <*> uSqlExp right
+    S.BECompare <$> pure op <*> f left <*> f right
   S.BECompareAny op left right ->
-    S.BECompareAny <$> return op <*> uSqlExp left <*> uSqlExp right
-  S.BENull e -> S.BENull <$> uSqlExp e
-  S.BENotNull e -> S.BENotNull <$> uSqlExp e
-  S.BEExists sel -> S.BEExists <$> uSelect sel
-  S.BEIN left exps -> S.BEIN <$> uSqlExp left <*> mapM uSqlExp exps
-  S.BEExp e -> S.BEExp <$> uSqlExp e
+    S.BECompareAny <$> pure op <*> f left <*> f right
+  S.BENull e -> S.BENull <$> f e
+  S.BENotNull e -> S.BENotNull <$> f e
+  S.BEExists sel -> S.BEExists <$> g sel
+  S.BEIN left exps -> S.BEIN <$> f left <*> traverse f exps
+  S.BEExp e -> S.BEExp <$> f e
 
 uOrderBy :: S.OrderByExp -> Uniq S.OrderByExp
 uOrderBy (S.OrderByExp ordByItems) =
